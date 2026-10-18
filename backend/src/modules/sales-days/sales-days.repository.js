@@ -34,6 +34,8 @@ const toSummaryRowDto = (row) => {
     salesCount: Number(row.sales_count || 0),
     cupsSold: Number(row.cups_sold || 0),
     totalSold: Number(row.total_sold || 0),
+    cashTotal: Number(row.cash_total || 0),
+    yapeTotal: Number(row.yape_total || 0),
   };
 };
 
@@ -56,15 +58,41 @@ export const salesDaysRepository = {
       WHERE sales_day_id = $1
       LIMIT 1;
     `;
-    const res = await query(sql, [dayId]);
+    const paymentSql = `
+      SELECT
+        COALESCE(SUM(total) FILTER (WHERE payment_method = 'cash'), 0) AS cash_total,
+        COALESCE(SUM(total) FILTER (WHERE payment_method = 'yape'), 0) AS yape_total
+      FROM sales
+      WHERE sales_day_id = $1;
+    `;
+    const [res, paymentRes] = await Promise.all([
+      query(sql, [dayId]),
+      query(paymentSql, [dayId]),
+    ]);
+
+    const cash = Number(paymentRes.rows[0]?.cash_total || 0);
+    const yape = Number(paymentRes.rows[0]?.yape_total || 0);
+
     if (res.rows[0]) {
       return {
         salesCount: Number(res.rows[0].sales_count || 0),
         cupsSold: Number(res.rows[0].cups_sold || 0),
         totalSold: Number(res.rows[0].total_sold || 0),
+        byPaymentMethod: {
+          cash,
+          yape,
+        },
       };
     }
-    return { salesCount: 0, cupsSold: 0, totalSold: 0 };
+    return {
+      salesCount: 0,
+      cupsSold: 0,
+      totalSold: 0,
+      byPaymentMethod: {
+        cash,
+        yape,
+      },
+    };
   },
 
   async create(dateStr, userId) {
@@ -91,7 +119,7 @@ export const salesDaysRepository = {
   async getDaySales(dayId) {
     // 1. Obtener todas las ventas del día
     const salesSql = `
-      SELECT id, total, created_at
+      SELECT id, total, payment_method, created_at
       FROM sales
       WHERE sales_day_id = $1
       ORDER BY created_at DESC, id DESC;
@@ -149,6 +177,7 @@ export const salesDaysRepository = {
     return sales.map((s) => ({
       id: Number(s.id),
       total: Number(s.total),
+      paymentMethod: s.payment_method,
       createdAt: s.created_at,
       items: salesItemsMap.get(s.id) || [],
     }));
@@ -178,17 +207,17 @@ export const salesDaysRepository = {
 
     if (from) {
       params.push(from);
-      whereClauses.push(`sale_date >= $${params.length}`);
+      whereClauses.push(`sds.sale_date >= $${params.length}`);
     }
 
     if (to) {
       params.push(to);
-      whereClauses.push(`sale_date <= $${params.length}`);
+      whereClauses.push(`sds.sale_date <= $${params.length}`);
     }
 
     const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
 
-    const countSql = `SELECT COUNT(*)::int AS total FROM v_sales_day_summary ${whereSql};`;
+    const countSql = `SELECT COUNT(*)::int AS total FROM v_sales_day_summary sds ${whereSql};`;
     const countRes = await query(countSql, params);
     const total = Number(countRes.rows[0]?.total || 0);
 
@@ -199,11 +228,20 @@ export const salesDaysRepository = {
     const offsetParam = `$${params.length}`;
 
     const sql = `
-      SELECT sales_day_id, sale_date, status, opened_at, closed_at, closed_by,
-             sales_count, cups_sold, total_sold
-      FROM v_sales_day_summary
+      SELECT sds.sales_day_id, sds.sale_date, sds.status, sds.opened_at, sds.closed_at, sds.closed_by,
+             sds.sales_count, sds.cups_sold, sds.total_sold,
+             COALESCE(pm.cash_total, 0) AS cash_total,
+             COALESCE(pm.yape_total, 0) AS yape_total
+      FROM v_sales_day_summary sds
+      LEFT JOIN (
+        SELECT sales_day_id,
+               COALESCE(SUM(total) FILTER (WHERE payment_method = 'cash'), 0) AS cash_total,
+               COALESCE(SUM(total) FILTER (WHERE payment_method = 'yape'), 0) AS yape_total
+        FROM sales
+        GROUP BY sales_day_id
+      ) pm ON pm.sales_day_id = sds.sales_day_id
       ${whereSql}
-      ORDER BY sale_date DESC
+      ORDER BY sds.sale_date DESC
       LIMIT ${limitParam} OFFSET ${offsetParam};
     `;
     const res = await query(sql, params);

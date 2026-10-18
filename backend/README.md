@@ -20,11 +20,11 @@ Backend completo para el sistema web de venta y gestión de cremoladas, desarrol
 ### Migración 002: Modelo de vaso con precio fijo (`002_fixed_cup_price.sql`)
 La migración se encuentra en `db/migrations/002_fixed_cup_price.sql`. Introduce la tabla `app_settings` con `cup_price = '2.00'`, adapta `sale_items` a vasos y crea `sale_item_flavors` para admitir vasos simples o surtidos (1 a 6 sabores) al mismo precio.
 
-> [!IMPORTANT]
-> **Ejecución manual**: Esta migración **NO** se ejecuta automáticamente al iniciar la aplicación. Debe ejecutarse manualmente desde el **SQL Editor de la consola de Neon**:
-> 1. Ingrese a la consola de [Neon Console](https://console.neon.tech).
-> 2. Seleccione su proyecto y diríjase a **SQL Editor**.
-> 3. Abra el archivo `backend/db/migrations/002_fixed_cup_price.sql`, copie su contenido y presione **Run**.
+### Migración 003: Método de pago en ventas (`003_payment_method.sql`)
+La migración documentaria se encuentra en `db/migrations/003_payment_method.sql`. Agrega la columna `payment_method VARCHAR(10) NOT NULL DEFAULT 'cash'` con CHECK (`'cash'` | `'yape'`) en la tabla `sales`. Permite registrar el método de pago ('cash' = Efectivo, 'yape' = Yape) en cada venta y calcular los ingresos desglosados por método.
+
+> [!NOTE]
+> Esta migración ya fue aplicada directamente en la base de datos de Neon y las ventas históricas quedaron como `'cash'`. El archivo SQL se mantiene como registro de versionado.
 
 ---
 
@@ -260,20 +260,25 @@ En la sección **Settings → Environment Variables** de Vercel, configure:
       "totals": {
         "salesCount": 12,
         "cupsSold": 24,
-        "totalSold": 48.00
+        "totalSold": 48.00,
+        "byPaymentMethod": {
+          "cash": 36.00,
+          "yape": 12.00
+        }
       }
     }
   }
   ```
 - `POST /api/sales-days/today/start`: Iniciar la jornada de hoy. Si ya existe, responde 409 `DAY_ALREADY_STARTED`.
 - `POST /api/sales-days/today/close`: Cerrar manualmente la jornada de hoy (`closed_by = 'manual'`).
-- `GET /api/sales-days/today/sales`: Detalle para el panel de venta con ventas agrupadas, vasos y estadísticas por sabor (`v_sales_day_by_flavor`).
-- `GET /api/sales-days`: Historial paginado de jornadas (`from`, `to`).
+- `GET /api/sales-days/today/sales`: Detalle para el panel de venta con ventas agrupadas (incluyen `paymentMethod`), vasos y estadísticas por sabor (`v_sales_day_by_flavor`).
+- `GET /api/sales-days`: Historial paginado de jornadas (`from`, `to`), cada jornada incluye `cashTotal` y `yapeTotal`.
 
 ---
 
 ### 7. Módulo de Ventas (`/api/sales`)
 - `POST /api/sales`: Registra una venta en una **única transacción segura**:
+  - Requiere el campo obligatorio `paymentMethod` con valor `'cash'` o `'yape'`.
   - Verifica jornada abierta (`FOR SHARE`).
   - Verifica que los sabores existan, estén activos y no estén agotados (`FOR SHARE`).
   - Obtiene el precio por vaso de `app_settings` (ignora cualquier precio del cliente).
@@ -283,6 +288,7 @@ En la sección **Settings → Environment Variables** de Vercel, configure:
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer <TOKEN>" \
     -d '{
+      "paymentMethod": "yape",
       "items": [
         { "flavorIds": [1, 2], "quantity": 2 },
         { "flavorIds": [3], "quantity": 1 }
@@ -295,6 +301,7 @@ En la sección **Settings → Environment Variables** de Vercel, configure:
     "data": {
       "id": 42,
       "total": 6.00,
+      "paymentMethod": "yape",
       "createdAt": "2026-10-18T16:30:00.000Z",
       "items": [
         {
@@ -324,7 +331,7 @@ En la sección **Settings → Environment Variables** de Vercel, configure:
 ---
 
 ### 8. Módulo de Estadísticas (`/api/stats`)
-- `GET /api/stats/summary`: Resumen global de inversión, ingresos brutos y ganancia neta.
+- `GET /api/stats/summary`: Resumen global de inversión, ingresos brutos, desglose por método de pago y ganancia neta.
   ```bash
   curl -X GET http://localhost:4000/api/stats/summary \
     -H "Authorization: Bearer <TOKEN>"
@@ -339,6 +346,10 @@ En la sección **Settings → Environment Variables** de Vercel, configure:
       "investmentBreakdown": {
         "preparations": 300.00,
         "expenses": 150.00
+      },
+      "revenueByPaymentMethod": {
+        "cash": 800.00,
+        "yape": 400.00
       }
     }
   }

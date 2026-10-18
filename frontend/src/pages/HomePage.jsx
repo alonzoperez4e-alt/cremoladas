@@ -14,6 +14,8 @@ export default function HomePage() {
   const netProfit = stats?.netProfit || 0;
   const prepAmount = stats?.investmentBreakdown?.preparations || 0;
   const expAmount = stats?.investmentBreakdown?.expenses || 0;
+  const cashRevenue = stats?.revenueByPaymentMethod?.cash || 0;
+  const yapeRevenue = stats?.revenueByPaymentMethod?.yape || 0;
 
   return (
     <div className="space-y-6 pb-6">
@@ -36,7 +38,7 @@ export default function HomePage() {
           <StatCard
             title="Ganancias totales"
             amount={totalRevenue}
-            subtitle="Ingresos brutos acumulados por ventas"
+            subtitle={`Efectivo ${formatCurrency(cashRevenue)} · Yape ${formatCurrency(yapeRevenue)}`}
             icon={DollarSign}
             variant="revenue"
             isLoading={isLoading}

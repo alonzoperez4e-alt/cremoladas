@@ -43,6 +43,8 @@ export function SalesDayCard() {
   const status = data?.status || 'not_started';
   const salesDay = data?.salesDay;
   const totals = data?.totals || { salesCount: 0, cupsSold: 0, totalSold: 0 };
+  const cashDay = totals?.byPaymentMethod?.cash || 0;
+  const yapeDay = totals?.byPaymentMethod?.yape || 0;
   const dateStr = data?.date;
 
   const handleCardClick = () => {
@@ -141,6 +143,9 @@ export function SalesDayCard() {
                     {totals.salesCount} venta(s) registradas · {totals.cupsSold} vaso(s) despachados
                     {salesDay?.openedAt && ` · Iniciada a las ${formatTime(salesDay.openedAt)}`}
                   </p>
+                  <p className="text-xs font-semibold text-slate-600 mt-1">
+                    Efectivo {formatCurrency(cashDay)} · Yape {formatCurrency(yapeDay)}
+                  </p>
                 </>
               )}
 
@@ -161,6 +166,9 @@ export function SalesDayCard() {
                         ? 'Cerrada manualmente'
                         : 'Cerrada automáticamente a las 00:00'}
                     </span>
+                  </p>
+                  <p className="text-xs font-semibold text-slate-600 mt-1">
+                    Efectivo {formatCurrency(cashDay)} · Yape {formatCurrency(yapeDay)}
                   </p>
                 </>
               )}

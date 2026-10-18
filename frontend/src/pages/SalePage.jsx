@@ -8,6 +8,8 @@ import {
   RotateCcw,
   Calendar,
   CheckCircle2,
+  Banknote,
+  Smartphone,
 } from 'lucide-react';
 import {
   useSalesDayToday,
@@ -82,6 +84,7 @@ export default function SalePage() {
   const [showConfirmStart, setShowConfirmStart] = useState(false);
   const [showConfirmClose, setShowConfirmClose] = useState(false);
   const [isSubmittingSale, setIsSubmittingSale] = useState(false);
+  const [submittingMethod, setSubmittingMethod] = useState(null);
 
   // Ref para evitar doble toque / doble envío inmediato
   const isSubmittingRef = useRef(false);
@@ -130,16 +133,18 @@ export default function SalePage() {
     }
   };
 
-  // Registrar venta
-  const handleRegisterSale = async () => {
+  // Registrar venta con método de pago
+  const handleRegisterSale = async (paymentMethod) => {
     if (lines.length === 0 || hasInvalidLines || !isDayOpen) return;
 
     // Bloqueo inmediato con ref contra doble toque
     if (isSubmittingRef.current) return;
     isSubmittingRef.current = true;
     setIsSubmittingSale(true);
+    setSubmittingMethod(paymentMethod);
 
     const payload = {
+      paymentMethod,
       items: lines.map((line) => ({
         flavorIds: line.flavorIds,
         quantity: line.quantity,
@@ -149,8 +154,9 @@ export default function SalePage() {
     try {
       const result = await createSaleMutation.mutateAsync(payload);
       const totalAmount = result?.total != null ? result.total : estimatedTotal;
+      const methodLabel = paymentMethod === 'yape' ? 'Yape' : 'Efectivo';
 
-      toast.success(`Venta registrada exitosamente: ${formatCurrency(totalAmount)}`);
+      toast.success(`Venta registrada (${methodLabel}): ${formatCurrency(totalAmount)}`);
       clearCart();
     } catch (err) {
       const apiError = err?.response?.data?.error;
@@ -191,6 +197,7 @@ export default function SalePage() {
     } finally {
       isSubmittingRef.current = false;
       setIsSubmittingSale(false);
+      setSubmittingMethod(null);
     }
   };
 
@@ -400,25 +407,44 @@ export default function SalePage() {
               )}
             </div>
 
-            <div className="w-full sm:w-auto flex items-center gap-3">
+            <div className="w-full sm:w-auto flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
               {hasInvalidLines && (
                 <span className="text-xs font-bold text-rose-600 hidden sm:flex items-center gap-1">
-                  <AlertTriangle className="w-4 h-4 text-rose-600" />
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
                   Corrige los vasos agotados
                 </span>
               )}
 
-              <Button
-                variant="primary"
-                size="lg"
-                disabled={hasInvalidLines || isSubmittingSale}
-                loading={isSubmittingSale}
-                onClick={handleRegisterSale}
-                icon={CheckCircle2}
-                className="w-full sm:w-auto min-w-[220px] text-base font-black shadow-lg shadow-pink-300"
-              >
-                Registrar venta
-              </Button>
+              <div className="grid grid-cols-2 gap-2.5 w-full sm:w-auto">
+                {/* Botón Efectivo */}
+                <button
+                  type="button"
+                  disabled={hasInvalidLines || isSubmittingSale}
+                  onClick={() => handleRegisterSale('cash')}
+                  aria-label="Registrar venta cobrada en Efectivo"
+                  className="flex items-center justify-center gap-2 px-4 py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white font-black text-sm sm:text-base shadow-lg shadow-emerald-200 disabled:opacity-50 disabled:pointer-events-none cursor-pointer transition-all min-w-[130px] sm:min-w-[150px]"
+                >
+                  <Banknote className="w-5 h-5 shrink-0" />
+                  <span>
+                    {isSubmittingSale && submittingMethod === 'cash' ? 'Cobrando...' : 'Efectivo'}
+                  </span>
+                </button>
+
+                {/* Botón Yape */}
+                <button
+                  type="button"
+                  disabled={hasInvalidLines || isSubmittingSale}
+                  onClick={() => handleRegisterSale('yape')}
+                  aria-label="Registrar venta cobrada en Yape"
+                  style={{ backgroundColor: '#742284' }}
+                  className="flex items-center justify-center gap-2 px-4 py-3.5 rounded-2xl hover:brightness-110 active:scale-[0.98] text-white font-black text-sm sm:text-base shadow-lg shadow-purple-200 disabled:opacity-50 disabled:pointer-events-none cursor-pointer transition-all min-w-[130px] sm:min-w-[150px]"
+                >
+                  <Smartphone className="w-5 h-5 shrink-0" />
+                  <span>
+                    {isSubmittingSale && submittingMethod === 'yape' ? 'Cobrando...' : 'Yape'}
+                  </span>
+                </button>
+              </div>
             </div>
           </div>
         </div>

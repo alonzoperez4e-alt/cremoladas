@@ -18,6 +18,10 @@ export const salesDaysService = {
           salesCount: 0,
           cupsSold: 0,
           totalSold: 0,
+          byPaymentMethod: {
+            cash: 0,
+            yape: 0,
+          },
         },
       };
     }
@@ -55,6 +59,10 @@ export const salesDaysService = {
           salesCount: 0,
           cupsSold: 0,
           totalSold: 0,
+          byPaymentMethod: {
+            cash: 0,
+            yape: 0,
+          },
         },
       };
     } catch (err) {

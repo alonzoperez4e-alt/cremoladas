@@ -5,7 +5,7 @@ import { AppError } from '../../utils/AppError.js';
 import { ERROR_CODES } from '../../config/constants.js';
 
 export const salesService = {
-  async createSale({ items }, userId) {
+  async createSale({ items, paymentMethod }, userId) {
     return withTransaction(async (client) => {
       // 1. Ejecutar cierre perezoso
       await closeOverdueSalesDays(client);
@@ -67,6 +67,7 @@ export const salesService = {
       const saleRecord = await salesRepository.createSaleRecord(client, {
         salesDayId: salesDay.id,
         createdBy: userId,
+        paymentMethod,
       });
 
       // 6. Insertar cada vaso (sale_items) y sus sabores asociados (sale_item_flavors)

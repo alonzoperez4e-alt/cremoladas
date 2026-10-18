@@ -18,8 +18,12 @@ const saleItemSchema = z.object({
 });
 
 export const createSaleSchema = z.object({
+  paymentMethod: z.enum(['cash', 'yape'], {
+    errorMap: () => ({ message: 'El método de pago es obligatorio y debe ser "cash" o "yape"' }),
+  }),
   items: z
     .array(saleItemSchema)
     .min(1, 'La venta debe contener al menos 1 línea de vasos')
     .max(50, 'La venta no puede superar 50 líneas de vasos'),
 });
+

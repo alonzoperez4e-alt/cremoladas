@@ -35,16 +35,17 @@ export const salesRepository = {
     }));
   },
 
-  async createSaleRecord(client, { salesDayId, createdBy }) {
+  async createSaleRecord(client, { salesDayId, createdBy, paymentMethod }) {
     const sql = `
-      INSERT INTO sales (sales_day_id, created_by, created_at)
-      VALUES ($1, $2, NOW())
-      RETURNING id, total, created_at;
+      INSERT INTO sales (sales_day_id, created_by, payment_method, created_at)
+      VALUES ($1, $2, $3, NOW())
+      RETURNING id, total, payment_method, created_at;
     `;
-    const res = await client.query(sql, [salesDayId, createdBy]);
+    const res = await client.query(sql, [salesDayId, createdBy, paymentMethod]);
     return {
       id: Number(res.rows[0].id),
       total: Number(res.rows[0].total || 0),
+      paymentMethod: res.rows[0].payment_method,
       createdAt: res.rows[0].created_at,
     };
   },
@@ -73,7 +74,7 @@ export const salesRepository = {
   },
 
   async getSaleWithDetails(client, saleId) {
-    const saleSql = `SELECT id, total, created_at FROM sales WHERE id = $1;`;
+    const saleSql = `SELECT id, total, payment_method, created_at FROM sales WHERE id = $1;`;
     const saleRes = await client.query(saleSql, [saleId]);
     const sale = saleRes.rows[0];
 
@@ -110,6 +111,7 @@ export const salesRepository = {
     return {
       id: Number(sale.id),
       total: Number(sale.total),
+      paymentMethod: sale.payment_method,
       createdAt: sale.created_at,
       items: Array.from(itemsMap.values()),
     };

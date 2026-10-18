@@ -26,6 +26,7 @@ const { salesDaysService } = await import('../src/modules/sales-days/sales-days.
 const { salesDaysRepository } = await import('../src/modules/sales-days/sales-days.repository.js');
 const { salesService } = await import('../src/modules/sales/sales.service.js');
 const { salesRepository } = await import('../src/modules/sales/sales.repository.js');
+const { createSaleSchema } = await import('../src/modules/sales/sales.schemas.js');
 const { statsService } = await import('../src/modules/stats/stats.service.js');
 const { statsRepository } = await import('../src/modules/stats/stats.repository.js');
 const poolModule = await import('../src/db/pool.js');
@@ -269,6 +270,72 @@ describe('10. Módulo de Jornadas y Ventas (Sales Days & Sales)', () => {
     );
   });
 
+  it('createSaleSchema valida campo paymentMethod obligatorio y enum cash|yape', () => {
+    const validCash = createSaleSchema.safeParse({
+      paymentMethod: 'cash',
+      items: [{ flavorIds: [1], quantity: 1 }],
+    });
+    assert.strictEqual(validCash.success, true);
+
+    const validYape = createSaleSchema.safeParse({
+      paymentMethod: 'yape',
+      items: [{ flavorIds: [1], quantity: 1 }],
+    });
+    assert.strictEqual(validYape.success, true);
+
+    const missingPayment = createSaleSchema.safeParse({
+      items: [{ flavorIds: [1], quantity: 1 }],
+    });
+    assert.strictEqual(missingPayment.success, false);
+
+    const invalidPayment = createSaleSchema.safeParse({
+      paymentMethod: 'card',
+      items: [{ flavorIds: [1], quantity: 1 }],
+    });
+    assert.strictEqual(invalidPayment.success, false);
+  });
+
+  it('venta guarda y retorna paymentMethod correctamente (yape / cash)', async () => {
+    let capturedSaleData = null;
+
+    poolModule.setTransactionRunnerForTesting(async (cb) => {
+      const mockClient = { query: async () => ({ rows: [] }) };
+      return cb(mockClient);
+    });
+    salesRepository.lockSalesDayByDate = async () => ({ id: 1, status: 'open' });
+    salesRepository.lockFlavorsByIds = async () => [
+      { id: 1, name: 'Fresa', isSoldOut: false, isActive: true },
+    ];
+    salesRepository.getCupPrice = async () => 2.0;
+    salesRepository.createSaleRecord = async (client, data) => {
+      capturedSaleData = data;
+      return { id: 10, total: 0, paymentMethod: data.paymentMethod, createdAt: new Date() };
+    };
+    salesRepository.createSaleItem = async (client, { quantity, unitPrice }) => {
+      return { id: 1, quantity, unitPrice, subtotal: quantity * unitPrice };
+    };
+    salesRepository.createSaleItemFlavor = async () => {};
+    salesRepository.getSaleWithDetails = async (client, saleId) => ({
+      id: saleId,
+      total: 4.0,
+      paymentMethod: capturedSaleData.paymentMethod,
+      createdAt: new Date().toISOString(),
+      items: [{ id: 1, quantity: 2, unitPrice: 2.0, subtotal: 4.0, flavors: [{ id: 1, name: 'Fresa' }] }],
+    });
+
+    const saleYape = await salesService.createSale(
+      {
+        paymentMethod: 'yape',
+        items: [{ flavorIds: [1], quantity: 2 }],
+      },
+      1
+    );
+
+    assert.strictEqual(capturedSaleData.paymentMethod, 'yape');
+    assert.strictEqual(saleYape.paymentMethod, 'yape');
+    assert.strictEqual(saleYape.total, 4.0);
+  });
+
   it('venta calcula el total correctamente (3 vasos x S/ 2.00 = S/ 6.00)', async () => {
     let capturedUnitPrices = [];
 
@@ -283,7 +350,12 @@ describe('10. Módulo de Jornadas y Ventas (Sales Days & Sales)', () => {
       { id: 3, name: 'Maracuyá', isSoldOut: false, isActive: true },
     ];
     salesRepository.getCupPrice = async () => 2.0; // Precio configurado en app_settings
-    salesRepository.createSaleRecord = async () => ({ id: 10, total: 0, createdAt: new Date() });
+    salesRepository.createSaleRecord = async (client, data) => ({
+      id: 10,
+      total: 0,
+      paymentMethod: data.paymentMethod,
+      createdAt: new Date(),
+    });
     salesRepository.createSaleItem = async (client, { quantity, unitPrice }) => {
       capturedUnitPrices.push(unitPrice);
       return { id: Math.random(), quantity, unitPrice, subtotal: quantity * unitPrice };
@@ -292,6 +364,7 @@ describe('10. Módulo de Jornadas y Ventas (Sales Days & Sales)', () => {
     salesRepository.getSaleWithDetails = async () => ({
       id: 10,
       total: 6.0,
+      paymentMethod: 'cash',
       createdAt: new Date().toISOString(),
       items: [
         {
@@ -317,6 +390,7 @@ describe('10. Módulo de Jornadas y Ventas (Sales Days & Sales)', () => {
 
     const sale = await salesService.createSale(
       {
+        paymentMethod: 'cash',
         items: [
           { flavorIds: [1, 2, 3], quantity: 1 }, // 1 vaso surtido (3 sabores) = S/ 2.00
           { flavorIds: [1], quantity: 2 },       // 2 vasos simples = S/ 4.00
@@ -326,12 +400,35 @@ describe('10. Módulo de Jornadas y Ventas (Sales Days & Sales)', () => {
     );
 
     assert.strictEqual(sale.total, 6.0);
+    assert.strictEqual(sale.paymentMethod, 'cash');
     assert.deepStrictEqual(capturedUnitPrices, [2.0, 2.0]);
+  });
+
+  it('los totales del día por método de pago suman el total vendido (cash + yape = totalSold)', async () => {
+    salesDaysRepository.findByDate = async () => ({ id: 5, status: 'open' });
+    salesDaysRepository.getTotalsByDayId = async () => ({
+      salesCount: 4,
+      cupsSold: 6,
+      totalSold: 12.0,
+      byPaymentMethod: {
+        cash: 8.0,
+        yape: 4.0,
+      },
+    });
+
+    const status = await salesDaysService.getTodayStatus();
+    assert.strictEqual(status.totals.totalSold, 12.0);
+    assert.strictEqual(status.totals.byPaymentMethod.cash, 8.0);
+    assert.strictEqual(status.totals.byPaymentMethod.yape, 4.0);
+    assert.strictEqual(
+      status.totals.byPaymentMethod.cash + status.totals.byPaymentMethod.yape,
+      status.totals.totalSold
+    );
   });
 });
 
 describe('11. Módulo de Estadísticas (Stats)', () => {
-  it('GET /api/stats/summary devuelve totales calculados y netProfit correcto', async () => {
+  it('GET /api/stats/summary devuelve totales calculados, netProfit y desglose de método de pago (cash + yape = totalRevenue)', async () => {
     statsRepository.getBusinessSummary = async () => ({
       totalInvestment: 350.0,
       totalRevenue: 800.0,
@@ -339,6 +436,10 @@ describe('11. Módulo de Estadísticas (Stats)', () => {
       investmentBreakdown: {
         preparations: 200.0,
         expenses: 150.0,
+      },
+      revenueByPaymentMethod: {
+        cash: 500.0,
+        yape: 300.0,
       },
     });
 
@@ -348,6 +449,12 @@ describe('11. Módulo de Estadísticas (Stats)', () => {
     assert.strictEqual(summary.netProfit, 450.0);
     assert.strictEqual(summary.investmentBreakdown.preparations, 200.0);
     assert.strictEqual(summary.investmentBreakdown.expenses, 150.0);
+    assert.strictEqual(summary.revenueByPaymentMethod.cash, 500.0);
+    assert.strictEqual(summary.revenueByPaymentMethod.yape, 300.0);
+    assert.strictEqual(
+      summary.revenueByPaymentMethod.cash + summary.revenueByPaymentMethod.yape,
+      summary.totalRevenue
+    );
   });
 });
 
