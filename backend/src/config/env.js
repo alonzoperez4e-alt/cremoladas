@@ -39,13 +39,12 @@ const envSchema = z.object({
 const parsed = envSchema.safeParse(process.env);
 
 if (!parsed.success) {
-  console.error('\n❌ Error crítico de configuración: Variables de entorno faltantes o inválidas:\n');
-  parsed.error.issues.forEach((issue) => {
-    const field = issue.path.join('.') || 'ENV';
-    console.error(`  - [${field}]: ${issue.message}`);
-  });
-  console.error('\nPor favor verifique su archivo .env basándose en .env.example y reinicie la aplicación.\n');
-  process.exit(1);
+  const issues = parsed.error.issues
+    .map((issue) => `  - [${issue.path.join('.') || 'ENV'}]: ${issue.message}`)
+    .join('\n');
+  const errorMessage = `❌ Error crítico de configuración: Variables de entorno faltantes o inválidas:\n${issues}\nPor favor configure las variables de entorno en Vercel o en su archivo .env.`;
+  console.error(errorMessage);
+  throw new Error(errorMessage);
 }
 
 const rawEnv = parsed.data;

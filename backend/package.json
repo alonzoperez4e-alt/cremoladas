@@ -3,10 +3,10 @@
   "version": "1.0.0",
   "description": "Backend API para el sistema de venta de cremoladas (Node.js + Express + Neon PostgreSQL)",
   "type": "module",
-  "main": "src/server.js",
+  "main": "src/index.js",
   "scripts": {
-    "dev": "nodemon src/server.js",
-    "start": "node src/server.js",
+    "dev": "nodemon src/local-server.js",
+    "start": "node src/local-server.js",
     "test": "node --test",
     "lint": "eslint src/ scripts/ tests/",
     "lint:fix": "eslint src/ scripts/ tests/ --fix",

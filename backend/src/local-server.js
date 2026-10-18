@@ -18,7 +18,7 @@ const startServer = async () => {
     const app = createApp();
 
     const server = app.listen(env.PORT, () => {
-      console.log(`🚀 Servidor iniciado en el puerto ${env.PORT} [entorno: ${env.NODE_ENV}]`);
+      console.log(`🚀 Servidor local iniciado en el puerto ${env.PORT} [entorno: ${env.NODE_ENV}]`);
       console.log(`📡 Base API: http://localhost:${env.PORT}/api`);
       console.log(`🩺 Health check: http://localhost:${env.PORT}/api/health`);
     });
@@ -61,7 +61,7 @@ const startServer = async () => {
     process.on('SIGINT', () => gracefulShutdown('SIGINT'));
     process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
   } catch (err) {
-    console.error('❌ Error crítico durante el arranque del servidor:\n', err.message);
+    console.error('❌ Error crítico durante el arranque del servidor local:\n', err.message);
     process.exit(1);
   }
 };

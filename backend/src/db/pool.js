@@ -13,9 +13,9 @@ const sslConfig = env.DATABASE_URL.includes('sslmode=disable')
 export const pool = new Pool({
   connectionString: env.DATABASE_URL,
   ssl: sslConfig,
-  max: 20,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 5000,
+  max: 3,
+  connectionTimeoutMillis: 8000,
+  idleTimeoutMillis: 10000,
 });
 
 // Manejo de errores en clientes inactivos para evitar que el proceso se caiga
@@ -68,16 +68,27 @@ export const withTransaction = async (callback) => {
 };
 
 /**
- * Comprueba la salud de la conexión a la base de datos
- * @returns {Promise<boolean>} True si la consulta SELECT 1 responde exitosamente
+ * Comprueba la salud de la conexión a la base de datos con un timeout estricto (<10s)
+ * @param {number} [timeoutMs=6000] - Tiempo máximo de espera antes de considerar la BD caída
+ * @returns {Promise<boolean>} True si la consulta SELECT 1 responde exitosamente en el tiempo límite
  */
-export const checkDbHealth = async () => {
+export const checkDbHealth = async (timeoutMs = 6000) => {
+  let timer;
   try {
-    const res = await pool.query('SELECT 1 AS alive;');
+    const queryPromise = pool.query('SELECT 1 AS alive;');
+    const timeoutPromise = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        reject(new Error(`Timeout de verificación de salud de la BD (${timeoutMs}ms)`));
+      }, timeoutMs);
+    });
+
+    const res = await Promise.race([queryPromise, timeoutPromise]);
     return res.rows?.[0]?.alive === 1;
   } catch (err) {
     console.error('Error al verificar la salud de la base de datos:', err.message);
     return false;
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 };
 

@@ -98,7 +98,7 @@ El sistema implementa una estrategia dual para garantizar que ninguna jornada qu
 # Desarrollo con Nodemon
 npm run dev
 
-# Producción
+# Producción (Servidor continuo / local)
 npm start
 
 # Suite de pruebas automatizadas
@@ -107,6 +107,39 @@ npm test
 # Linter ESLint
 npm run lint
 ```
+
+---
+
+## ☁️ Despliegue en Vercel (Serverless)
+
+El backend está preparado para funcionar como una función Serverless en Vercel mediante `src/index.js` y `vercel.json`:
+
+### 1. Configuración del Proyecto en Vercel
+- **Root Directory**: Configurar en `backend` (o seleccionar la carpeta `backend` en la creación del proyecto).
+- **Framework Preset**: `Other`.
+- **Build Command**: Dejar vacío o por defecto.
+- **Output Directory**: Dejar vacío o por defecto.
+
+### 2. Variables de Entorno Requeridas en Vercel
+En la sección **Settings → Environment Variables** de Vercel, configure:
+
+| Variable | Valor / Ejemplo | Descripción |
+| :--- | :--- | :--- |
+| `DATABASE_URL` | `postgresql://user:pass@ep-xyz.us-east-2.aws.neon.tech/neondb?sslmode=require` | Cadena de conexión de Neon con SSL |
+| `JWT_SECRET` | Cadena de al menos 32 caracteres | Clave criptográfica para firmar tokens JWT |
+| `JWT_EXPIRES_IN` | `8h` | Duración de la sesión |
+| `CLIENT_URL` | `https://tu-frontend.vercel.app` | URL de tu frontend para permitir peticiones CORS |
+| `ENABLE_CRON` | `false` | **Obligatorio en Vercel**. Deshabilita los timers continuos de `node-cron`. El cierre automático de jornadas vencidas se ejecuta de forma perezosa (*lazy close*) automáticamente en cada petición de venta o jornada sin requerir procesos en segundo plano. |
+| `TRUST_PROXY` | `true` | Permite identificar correctamente la IP detrás del proxy de Vercel |
+| `NODE_ENV` | `production` | Entorno de ejecución productivo |
+
+### 3. Arquitectura Serverless adaptada
+- **`src/index.js`**: Punto de entrada para Vercel. Exporta la aplicación Express directamente (`export default app;`) sin invocar `app.listen()`, sin top-level await y sin inicializar cron jobs ni sockets persistentes.
+- **`src/local-server.js`**: Servidor tradicional con `app.listen()`, prueba inicial de conexión y cron jobs continuos, utilizado únicamente para desarrollo local (`npm run dev` o `npm start`).
+- **`src/db/pool.js`**: Configurado con `max: 3`, `connectionTimeoutMillis: 8000` y `idleTimeoutMillis: 10000`. La conexión al pool de Neon se realiza de forma **perezosa** (*lazy*) en la primera consulta, optimizando las conexiones en entornos sin servidor.
+- **`GET /api/health`**: Cuenta con un timeout estricto propio (<10 s). Si la base de datos no responde a tiempo, devuelve `db: "down"` inmediatamente sin causar timeouts 504 en la función serverless.
+- **`vercel.json`**: Redirige todas las rutas entrantes a `src/index.js`.
+
 
 ---
 

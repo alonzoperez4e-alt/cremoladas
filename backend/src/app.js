@@ -13,7 +13,7 @@ import { ERROR_CODES } from './config/constants.js';
 export const createApp = () => {
   const app = express();
 
-  // Configuración de trust proxy si el servidor corre detrás de un reverse proxy (Render, Railway, etc.)
+  // Configuración de trust proxy si el servidor corre detrás de un reverse proxy (Vercel, Render, Railway, etc.)
   if (env.TRUST_PROXY) {
     app.set('trust proxy', env.TRUST_PROXY);
   }
@@ -52,6 +52,18 @@ export const createApp = () => {
   // Parseo de cuerpo JSON limitado a 100kb para prevenir ataques DoS
   app.use(express.json({ limit: '100kb' }));
 
+  // Ruta raíz rápida para verificar estado sin base de datos ni timeouts
+  app.get('/', (req, res) => {
+    res.status(200).json({
+      status: 'ok',
+      service: 'Cremoladas API Server',
+      health: '/api/health',
+    });
+  });
+
+  // Manejador explícito de favicon para evitar 404/504 en navegadores
+  app.get('/favicon.ico', (req, res) => res.status(204).end());
+
   // Limitador de tasa global para todas las rutas del API
   app.use('/api', apiRateLimiter);
 
@@ -67,4 +79,5 @@ export const createApp = () => {
   return app;
 };
 
-export default createApp;
+export const app = createApp();
+export default app;
