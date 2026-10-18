@@ -1,12 +1,19 @@
 import { env } from './config/env.js';
 import { createApp } from './app.js';
 import { pool, closePool } from './db/pool.js';
+import {
+  startCloseOverdueDaysJob,
+  stopCloseOverdueDaysJob,
+} from './jobs/closeOverdueDays.js';
 
 const startServer = async () => {
   try {
     console.log('⏳ Verificando conexión a Neon PostgreSQL...');
     await pool.query('SELECT 1 AS conn_check;');
     console.log('✅ Conexión a la base de datos confirmada.');
+
+    // Iniciar tareas programadas de cierre de jornadas si corresponde
+    startCloseOverdueDaysJob();
 
     const app = createApp();
 
@@ -39,6 +46,7 @@ const startServer = async () => {
         console.log('🔒 Servidor HTTP cerrado sin aceptar nuevas conexiones.');
 
         try {
+          stopCloseOverdueDaysJob();
           await closePool();
           console.log('🔒 Conexiones del pool de PostgreSQL cerradas.');
           console.log('👋 Servidor apagado completamente.');

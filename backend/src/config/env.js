@@ -28,6 +28,12 @@ const envSchema = z.object({
   RATE_LIMIT_LOGIN_WINDOW_MINS: z.coerce.number().int().positive().default(15),
   RATE_LIMIT_GLOBAL_MAX: z.coerce.number().int().positive().default(100),
   RATE_LIMIT_GLOBAL_WINDOW_MINS: z.coerce.number().int().positive().default(15),
+  ENABLE_CRON: z
+    .preprocess((val) => {
+      if (val === 'false' || val === false) return false;
+      return true;
+    }, z.boolean())
+    .default(true),
 });
 
 const parsed = envSchema.safeParse(process.env);
