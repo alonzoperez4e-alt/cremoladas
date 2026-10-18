@@ -1,11 +1,13 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { useQueryClient } from '@tanstack/react-query';
 import { Modal } from '../../../components/ui/Modal';
 import { Input } from '../../../components/ui/Input';
 import { Select } from '../../../components/ui/Select';
 import { Button } from '../../../components/ui/Button';
+import { PaymentSourceSelector } from '../../transactions/components/PaymentSourceSelector';
 import { useUpdatePreparation } from '../hooks/usePreparations';
 import { useFlavors } from '../../flavors/hooks/useFlavors';
 import { getFlavorIcon } from '../../../lib/flavorIcons';
@@ -29,9 +31,18 @@ const preparationEditSchema = z.object({
 });
 
 export function PreparationEditModal({ isOpen, onClose, preparation = null }) {
+  const queryClient = useQueryClient();
   const updateMutation = useUpdatePreparation();
   const { data: flavors = [] } = useFlavors();
   const today = getTodayLima();
+
+  const [paymentState, setPaymentState] = useState({
+    cashAmount: 0,
+    yapeAmount: 0,
+    ownAmount: 0,
+    isValid: true,
+    errorMessage: null,
+  });
 
   const {
     register,
@@ -51,6 +62,7 @@ export function PreparationEditModal({ isOpen, onClose, preparation = null }) {
   });
 
   const watchedDesc = watch('description') || '';
+  const watchedAmount = watch('investmentAmount') || 0;
 
   useEffect(() => {
     if (isOpen && preparation) {
@@ -60,11 +72,23 @@ export function PreparationEditModal({ isOpen, onClose, preparation = null }) {
         prepDate: preparation.prepDate ? preparation.prepDate.slice(0, 10) : today,
         description: preparation.description || '',
       });
+      setPaymentState({
+        cashAmount: preparation.payment?.cashAmount || 0,
+        yapeAmount: preparation.payment?.yapeAmount || 0,
+        ownAmount: preparation.payment?.ownAmount || 0,
+        isValid: true,
+        errorMessage: null,
+      });
     }
   }, [isOpen, preparation, reset, today]);
 
   const onSubmit = async (data) => {
     if (!preparation) return;
+    if (!paymentState.isValid) {
+      toast.error(paymentState.errorMessage || 'Verifica el origen del dinero');
+      return;
+    }
+
     try {
       await updateMutation.mutateAsync({
         id: preparation.id,
@@ -73,13 +97,29 @@ export function PreparationEditModal({ isOpen, onClose, preparation = null }) {
           investmentAmount: Number(data.investmentAmount),
           prepDate: data.prepDate,
           description: data.description ? data.description.trim() : null,
+          payment: {
+            cashAmount: paymentState.cashAmount,
+            yapeAmount: paymentState.yapeAmount,
+            ownAmount: paymentState.ownAmount,
+          },
         },
       });
       onClose();
     } catch (error) {
-      const handled = setFormErrorsFromApi(error, setError);
-      if (!handled) {
-        toast.error(getErrorMessage(error));
+      queryClient.invalidateQueries({ queryKey: ['stats'] });
+      const code = error.response?.data?.error?.code;
+      const details = error.response?.data?.error?.details;
+
+      if (code === 'INSUFFICIENT_BALANCE') {
+        const acc = details?.account === 'cash' ? 'Efectivo' : 'Yape';
+        toast.error(`Saldo insuficiente en ${acc} (disponible S/ ${Number(details?.available || 0).toFixed(2)})`);
+      } else if (code === 'PAYMENT_SUM_MISMATCH') {
+        toast.error('La suma de los orígenes de pago debe ser exactamente igual al monto de inversión');
+      } else {
+        const handled = setFormErrorsFromApi(error, setError);
+        if (!handled) {
+          toast.error(getErrorMessage(error));
+        }
       }
     }
   };
@@ -130,6 +170,18 @@ export function PreparationEditModal({ isOpen, onClose, preparation = null }) {
           {...register('investmentAmount')}
         />
 
+        {/* Selector de origen de pago */}
+        {preparation && (
+          <PaymentSourceSelector
+            amount={watchedAmount}
+            value={paymentState}
+            onChange={setPaymentState}
+            existingPayment={preparation.payment}
+            isEdit={true}
+            error={paymentState.errorMessage}
+          />
+        )}
+
         {/* Descripción */}
         <div className="space-y-1">
           <div className="flex justify-between items-center">
@@ -172,7 +224,12 @@ export function PreparationEditModal({ isOpen, onClose, preparation = null }) {
           >
             Cancelar
           </Button>
-          <Button type="submit" variant="primary" loading={updateMutation.isPending}>
+          <Button
+            type="submit"
+            variant="primary"
+            loading={updateMutation.isPending}
+            disabled={!paymentState.isValid || updateMutation.isPending}
+          >
             Guardar cambios
           </Button>
         </div>

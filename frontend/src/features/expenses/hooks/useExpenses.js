@@ -20,6 +20,7 @@ export function useCreateExpense() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: EXPENSES_QUERY_KEY });
       queryClient.invalidateQueries({ queryKey: ['stats'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
       toast.success('Gasto registrado exitosamente');
     },
   });
@@ -33,6 +34,7 @@ export function useUpdateExpense() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: EXPENSES_QUERY_KEY });
       queryClient.invalidateQueries({ queryKey: ['stats'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
       toast.success('Gasto actualizado');
     },
     onError: (err) => {
@@ -49,6 +51,7 @@ export function useDeleteExpense() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: EXPENSES_QUERY_KEY });
       queryClient.invalidateQueries({ queryKey: ['stats'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
       toast.success('Gasto eliminado');
     },
     onError: (err) => {

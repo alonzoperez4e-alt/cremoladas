@@ -22,6 +22,11 @@ const toExpenseDto = (row) => {
     description: row.description || null,
     createdBy: row.created_by ? Number(row.created_by) : null,
     createdAt: row.created_at,
+    payment: {
+      cashAmount: Number(row.paid_cash || 0),
+      yapeAmount: Number(row.paid_yape || 0),
+      ownAmount: Number(row.paid_own || 0),
+    },
   };
 };
 
@@ -66,6 +71,7 @@ export const expensesRepository = {
 
     const itemsSql = `
       SELECT e.id, e.material_id, e.expense_date, e.amount, e.description, e.created_by, e.created_at,
+             e.paid_cash, e.paid_yape, e.paid_own,
              m.name AS material_name
       FROM expenses e
       JOIN materials m ON m.id = e.material_id
@@ -84,55 +90,63 @@ export const expensesRepository = {
     };
   },
 
-  async findById(id) {
+  async findById(id, client = null) {
     const sql = `
       SELECT e.id, e.material_id, e.expense_date, e.amount, e.description, e.created_by, e.created_at,
+             e.paid_cash, e.paid_yape, e.paid_own,
              m.name AS material_name
       FROM expenses e
       JOIN materials m ON m.id = e.material_id
       WHERE e.id = $1
       LIMIT 1;
     `;
-    const res = await query(sql, [id]);
+    const res = client ? await client.query(sql, [id]) : await query(sql, [id]);
     return toExpenseDto(res.rows[0]);
   },
 
-  async create({ materialId, expenseDate, amount, description, createdBy }) {
+  async create({ materialId, expenseDate, amount, description, createdBy, paidCash = 0, paidYape = 0, paidOwn = 0 }, client = null) {
     const sql = `
       WITH inserted AS (
-        INSERT INTO expenses (material_id, expense_date, amount, description, created_by, created_at)
-        VALUES ($1, $2, $3, $4, $5, NOW())
-        RETURNING id, material_id, expense_date, amount, description, created_by, created_at
+        INSERT INTO expenses (material_id, expense_date, amount, description, created_by, paid_cash, paid_yape, paid_own, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+        RETURNING id, material_id, expense_date, amount, description, created_by, paid_cash, paid_yape, paid_own, created_at
       )
-      SELECT ins.id, ins.material_id, ins.expense_date, ins.amount, ins.description, ins.created_by, ins.created_at,
+      SELECT ins.id, ins.material_id, ins.expense_date, ins.amount, ins.description, ins.created_by,
+             ins.paid_cash, ins.paid_yape, ins.paid_own,
              m.name AS material_name
       FROM inserted ins
       JOIN materials m ON m.id = ins.material_id;
     `;
-    const res = await query(sql, [materialId, expenseDate, amount, description, createdBy]);
+    const res = client
+      ? await client.query(sql, [materialId, expenseDate, amount, description, createdBy, paidCash, paidYape, paidOwn])
+      : await query(sql, [materialId, expenseDate, amount, description, createdBy, paidCash, paidYape, paidOwn]);
     return toExpenseDto(res.rows[0]);
   },
 
-  async update(id, { materialId, expenseDate, amount, description }) {
+  async update(id, { materialId, expenseDate, amount, description, paidCash = 0, paidYape = 0, paidOwn = 0 }, client = null) {
     const sql = `
       WITH updated AS (
         UPDATE expenses
-        SET material_id = $1, expense_date = $2, amount = $3, description = $4
-        WHERE id = $5
-        RETURNING id, material_id, expense_date, amount, description, created_by, created_at
+        SET material_id = $1, expense_date = $2, amount = $3, description = $4,
+            paid_cash = $5, paid_yape = $6, paid_own = $7
+        WHERE id = $8
+        RETURNING id, material_id, expense_date, amount, description, created_by, paid_cash, paid_yape, paid_own, created_at
       )
-      SELECT upd.id, upd.material_id, upd.expense_date, upd.amount, upd.description, upd.created_by, upd.created_at,
+      SELECT upd.id, upd.material_id, upd.expense_date, upd.amount, upd.description, upd.created_by,
+             upd.paid_cash, upd.paid_yape, upd.paid_own,
              m.name AS material_name
       FROM updated upd
       JOIN materials m ON m.id = upd.material_id;
     `;
-    const res = await query(sql, [materialId, expenseDate, amount, description, id]);
+    const res = client
+      ? await client.query(sql, [materialId, expenseDate, amount, description, paidCash, paidYape, paidOwn, id])
+      : await query(sql, [materialId, expenseDate, amount, description, paidCash, paidYape, paidOwn, id]);
     return toExpenseDto(res.rows[0]);
   },
 
-  async delete(id) {
+  async delete(id, client = null) {
     const sql = 'DELETE FROM expenses WHERE id = $1 RETURNING id;';
-    const res = await query(sql, [id]);
+    const res = client ? await client.query(sql, [id]) : await query(sql, [id]);
     return res.rowCount > 0;
   },
 };

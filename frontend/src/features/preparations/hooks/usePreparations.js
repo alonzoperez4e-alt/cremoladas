@@ -20,6 +20,7 @@ export function useCreatePreparation() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: PREPARATIONS_QUERY_KEY });
       queryClient.invalidateQueries({ queryKey: ['stats'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
       toast.success('Preparación registrada exitosamente');
     },
   });
@@ -33,6 +34,7 @@ export function useUpdatePreparation() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: PREPARATIONS_QUERY_KEY });
       queryClient.invalidateQueries({ queryKey: ['stats'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
       toast.success('Preparación actualizada');
     },
     onError: (err) => {
@@ -49,6 +51,7 @@ export function useDeletePreparation() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: PREPARATIONS_QUERY_KEY });
       queryClient.invalidateQueries({ queryKey: ['stats'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
       toast.success('Preparación eliminada');
     },
     onError: (err) => {

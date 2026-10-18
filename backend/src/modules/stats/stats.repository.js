@@ -4,28 +4,38 @@ export const statsRepository = {
   async getBusinessSummary() {
     const prepSql = `SELECT COALESCE(SUM(investment_amount), 0) AS total_prep FROM preparations;`;
     const expSql = `SELECT COALESCE(SUM(amount), 0) AS total_exp FROM expenses;`;
-    const revSql = `
-      SELECT
-        COALESCE(SUM(total), 0) AS total_rev,
-        COALESCE(SUM(total) FILTER (WHERE payment_method = 'cash'), 0) AS cash_rev,
-        COALESCE(SUM(total) FILTER (WHERE payment_method = 'yape'), 0) AS yape_rev
-      FROM sales;
-    `;
+    const balancesSql = `SELECT * FROM v_account_balances LIMIT 1;`;
 
-    const [prepRes, expRes, revRes] = await Promise.all([
+    const [prepRes, expRes, balancesRes] = await Promise.all([
       query(prepSql),
       query(expSql),
-      query(revSql),
+      query(balancesSql),
     ]);
 
     const preparations = Number(prepRes.rows[0]?.total_prep || 0);
     const expenses = Number(expRes.rows[0]?.total_exp || 0);
-    const totalRevenue = Number(revRes.rows[0]?.total_rev || 0);
-    const cash = Number(revRes.rows[0]?.cash_rev || 0);
-    const yape = Number(revRes.rows[0]?.yape_rev || 0);
 
+    const b = balancesRes.rows[0] || {};
+    const cashRevenue = Number(b.cash_revenue || 0);
+    const yapeRevenue = Number(b.yape_revenue || 0);
+    const cashInvested = Number(b.cash_invested || 0);
+    const yapeInvested = Number(b.yape_invested || 0);
+    const ownInvested = Number(b.own_invested || 0);
+    const cashWithdrawn = Number(b.cash_withdrawn || 0);
+    const yapeWithdrawn = Number(b.yape_withdrawn || 0);
+    const profitWithdrawn = Number(b.profit_withdrawn || 0);
+    const reimbursed = Number(b.reimbursed || 0);
+    const cashBalance = Number(b.cash_balance || 0);
+    const yapeBalance = Number(b.yape_balance || 0);
+    const pendingReimbursement = Number(b.pending_reimbursement || 0);
+
+    const totalRevenue = Number((cashRevenue + yapeRevenue).toFixed(2));
     const totalInvestment = Number((preparations + expenses).toFixed(2));
     const netProfit = Number((totalRevenue - totalInvestment).toFixed(2));
+    const availableProfit = Number((netProfit - profitWithdrawn).toFixed(2));
+
+    const totalWithdrawn = Number((cashWithdrawn + yapeWithdrawn).toFixed(2));
+    const totalBalance = Number((cashBalance + yapeBalance).toFixed(2));
 
     return {
       totalInvestment,
@@ -36,9 +46,26 @@ export const statsRepository = {
         expenses,
       },
       revenueByPaymentMethod: {
-        cash,
-        yape,
+        cash: cashRevenue,
+        yape: yapeRevenue,
       },
+      investmentBySource: {
+        cash: cashInvested,
+        yape: yapeInvested,
+        own: ownInvested,
+      },
+      withdrawals: {
+        total: totalWithdrawn,
+        profit: profitWithdrawn,
+        reimbursement: reimbursed,
+      },
+      balances: {
+        cash: cashBalance,
+        yape: yapeBalance,
+        total: totalBalance,
+      },
+      availableProfit,
+      pendingReimbursement,
     };
   },
 };

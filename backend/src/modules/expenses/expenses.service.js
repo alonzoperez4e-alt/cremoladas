@@ -3,6 +3,8 @@ import { materialsRepository } from '../materials/materials.repository.js';
 import { getTodayLima } from '../../utils/date.js';
 import { AppError } from '../../utils/AppError.js';
 import { ERROR_CODES } from '../../config/constants.js';
+import { withTransaction } from '../../db/pool.js';
+import { lockBalances, getBalances, assertInvariants, toCents } from '../../utils/balance.js';
 
 export const expensesService = {
   async getPaginated({ page = 1, pageSize = 20, from, to, materialId } = {}) {
@@ -39,7 +41,16 @@ export const expensesService = {
     };
   },
 
-  async create({ materialId, amount, expenseDate, description }, userId) {
+  async create({ materialId, amount, expenseDate, description, payment }, userId) {
+    const sumCents = toCents(payment?.cashAmount) + toCents(payment?.yapeAmount) + toCents(payment?.ownAmount);
+    if (sumCents !== toCents(amount)) {
+      throw new AppError(
+        400,
+        ERROR_CODES.PAYMENT_SUM_MISMATCH,
+        'La suma de los orígenes de pago debe ser exactamente igual al monto del gasto'
+      );
+    }
+
     const material = await materialsRepository.findById(materialId);
     if (!material || !material.isActive) {
       throw new AppError(
@@ -60,19 +71,42 @@ export const expensesService = {
       );
     }
 
-    return expensesRepository.create({
-      materialId,
-      expenseDate: finalDate,
-      amount,
-      description: description || null,
-      createdBy: userId,
+    return withTransaction(async (client) => {
+      await lockBalances(client);
+      const preBalances = await getBalances(client);
+
+      const created = await expensesRepository.create(
+        {
+          materialId,
+          expenseDate: finalDate,
+          amount,
+          description: description || null,
+          createdBy: userId,
+          paidCash: payment.cashAmount,
+          paidYape: payment.yapeAmount,
+          paidOwn: payment.ownAmount,
+        },
+        client
+      );
+
+      await assertInvariants(client, {
+        preBalances,
+        requestedCash: payment.cashAmount,
+        requestedYape: payment.yapeAmount,
+      });
+
+      return created;
     });
   },
 
-  async update(id, { materialId, amount, expenseDate, description }) {
-    const existing = await expensesRepository.findById(id);
-    if (!existing) {
-      throw new AppError(404, ERROR_CODES.EXPENSE_NOT_FOUND, 'El gasto solicitado no existe');
+  async update(id, { materialId, amount, expenseDate, description, payment }) {
+    const sumCents = toCents(payment?.cashAmount) + toCents(payment?.yapeAmount) + toCents(payment?.ownAmount);
+    if (sumCents !== toCents(amount)) {
+      throw new AppError(
+        400,
+        ERROR_CODES.PAYMENT_SUM_MISMATCH,
+        'La suma de los orígenes de pago debe ser exactamente igual al monto del gasto'
+      );
     }
 
     const material = await materialsRepository.findById(materialId);
@@ -85,29 +119,64 @@ export const expensesService = {
     }
 
     const todayLima = await getTodayLima();
-    const finalDate = expenseDate || existing.expenseDate;
 
-    if (finalDate > todayLima) {
-      throw new AppError(
-        400,
-        ERROR_CODES.VALIDATION_ERROR,
-        'La fecha del gasto no puede ser posterior a la fecha actual (Lima)'
+    return withTransaction(async (client) => {
+      await lockBalances(client);
+      const existing = await expensesRepository.findById(id, client);
+      if (!existing) {
+        throw new AppError(404, ERROR_CODES.EXPENSE_NOT_FOUND, 'El gasto solicitado no existe');
+      }
+
+      const finalDate = expenseDate || existing.expenseDate;
+      if (finalDate > todayLima) {
+        throw new AppError(
+          400,
+          ERROR_CODES.VALIDATION_ERROR,
+          'La fecha del gasto no puede ser posterior a la fecha actual (Lima)'
+        );
+      }
+
+      const preBalances = await getBalances(client);
+
+      const updated = await expensesRepository.update(
+        id,
+        {
+          materialId,
+          expenseDate: finalDate,
+          amount,
+          description: description || null,
+          paidCash: payment.cashAmount,
+          paidYape: payment.yapeAmount,
+          paidOwn: payment.ownAmount,
+        },
+        client
       );
-    }
 
-    return expensesRepository.update(id, {
-      materialId,
-      expenseDate: finalDate,
-      amount,
-      description: description || null,
+      await assertInvariants(client, {
+        preBalances,
+        requestedCash: payment.cashAmount,
+        requestedYape: payment.yapeAmount,
+      });
+
+      return updated;
     });
   },
 
   async delete(id) {
-    const deleted = await expensesRepository.delete(id);
-    if (!deleted) {
-      throw new AppError(404, ERROR_CODES.EXPENSE_NOT_FOUND, 'El gasto solicitado no existe');
-    }
-    return { message: 'Gasto eliminado exitosamente' };
+    return withTransaction(async (client) => {
+      await lockBalances(client);
+      const existing = await expensesRepository.findById(id, client);
+      if (!existing) {
+        throw new AppError(404, ERROR_CODES.EXPENSE_NOT_FOUND, 'El gasto solicitado no existe');
+      }
+
+      const preBalances = await getBalances(client);
+
+      await expensesRepository.delete(id, client);
+
+      await assertInvariants(client, { preBalances });
+
+      return { message: 'Gasto eliminado exitosamente' };
+    });
   },
 };

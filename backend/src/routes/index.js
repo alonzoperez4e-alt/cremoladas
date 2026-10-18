@@ -7,6 +7,8 @@ import preparationsRoutes from '../modules/preparations/preparations.routes.js';
 import salesDaysRoutes from '../modules/sales-days/sales-days.routes.js';
 import salesRoutes from '../modules/sales/sales.routes.js';
 import statsRoutes from '../modules/stats/stats.routes.js';
+import withdrawalsRoutes from '../modules/withdrawals/withdrawals.routes.js';
+import transactionsRoutes from '../modules/transactions/transactions.routes.js';
 import { requireAuth } from '../middlewares/auth.js';
 import { checkDbHealth } from '../db/pool.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
@@ -50,5 +52,7 @@ router.use('/preparations', requireAuth, preparationsRoutes);
 router.use('/sales-days', requireAuth, salesDaysRoutes);
 router.use('/sales', requireAuth, salesRoutes);
 router.use('/stats', requireAuth, statsRoutes);
+router.use('/withdrawals', requireAuth, withdrawalsRoutes);
+router.use('/transactions', requireAuth, transactionsRoutes);
 
 export default router;

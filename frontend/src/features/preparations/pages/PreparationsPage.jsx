@@ -32,6 +32,9 @@ import { formatCurrency, formatDate } from '../../../lib/format';
 import { getTodayLima } from '../../../lib/dates';
 import { getFlavorIcon } from '../../../lib/flavorIcons';
 import { getErrorMessage, setFormErrorsFromApi } from '../../../lib/errors';
+import { useQueryClient } from '@tanstack/react-query';
+import { PaymentSourceSelector } from '../../transactions/components/PaymentSourceSelector';
+import { PaymentSourceBadge } from '../../../components/ui/PaymentSourceBadge';
 import { toast } from 'sonner';
 
 const prepCreateSchema = z.object({
@@ -79,9 +82,21 @@ export default function PreparationsPage() {
   const createMutation = useCreatePreparation();
   const deleteMutation = useDeletePreparation();
 
+  const queryClient = useQueryClient();
+
   // Modales
   const [editingPrep, setEditingPrep] = useState(null);
   const [prepToDelete, setPrepToDelete] = useState(null);
+
+  // Estado del selector de origen de pago
+  const [paymentState, setPaymentState] = useState({
+    cashAmount: 0,
+    yapeAmount: 0,
+    ownAmount: 0,
+    isValid: false,
+    mode: '',
+    errorMessage: null,
+  });
 
   // Formulario
   const {
@@ -102,14 +117,25 @@ export default function PreparationsPage() {
   });
 
   const watchedDesc = watch('description') || '';
+  const watchedAmount = watch('investmentAmount') || 0;
 
   const onSubmit = async (data) => {
+    if (!paymentState.isValid) {
+      toast.error(paymentState.errorMessage || 'Es obligatorio elegir el origen del dinero');
+      return;
+    }
+
     try {
       await createMutation.mutateAsync({
         flavorId: Number(data.flavorId),
         investmentAmount: Number(data.investmentAmount),
         prepDate: data.prepDate,
         description: data.description ? data.description.trim() : null,
+        payment: {
+          cashAmount: paymentState.cashAmount,
+          yapeAmount: paymentState.yapeAmount,
+          ownAmount: paymentState.ownAmount,
+        },
       });
 
       // Limpiar manteniendo la fecha
@@ -121,9 +147,20 @@ export default function PreparationsPage() {
         description: '',
       });
     } catch (err) {
-      const handled = setFormErrorsFromApi(err, setError);
-      if (!handled) {
-        toast.error(getErrorMessage(err));
+      queryClient.invalidateQueries({ queryKey: ['stats'] });
+      const code = err.response?.data?.error?.code;
+      const details = err.response?.data?.error?.details;
+
+      if (code === 'INSUFFICIENT_BALANCE') {
+        const acc = details?.account === 'cash' ? 'Efectivo' : 'Yape';
+        toast.error(`Saldo insuficiente en ${acc} (disponible S/ ${Number(details?.available || 0).toFixed(2)})`);
+      } else if (code === 'PAYMENT_SUM_MISMATCH') {
+        toast.error('La suma de los orígenes de pago debe ser exactamente igual al monto de inversión');
+      } else {
+        const handled = setFormErrorsFromApi(err, setError);
+        if (!handled) {
+          toast.error(getErrorMessage(err));
+        }
       }
     }
   };
@@ -229,6 +266,14 @@ export default function PreparationsPage() {
                 {...register('investmentAmount')}
               />
 
+              {/* Selector de origen del dinero */}
+              <PaymentSourceSelector
+                amount={watchedAmount}
+                value={paymentState}
+                onChange={setPaymentState}
+                error={paymentState.errorMessage}
+              />
+
               {/* Descripción */}
               <div className="space-y-1">
                 <div className="flex justify-between items-center">
@@ -256,6 +301,7 @@ export default function PreparationsPage() {
                 type="submit"
                 variant="primary"
                 loading={createMutation.isPending}
+                disabled={!paymentState.isValid || createMutation.isPending}
                 className="w-full"
               >
                 Guardar preparación
@@ -386,6 +432,7 @@ export default function PreparationsPage() {
                             icon: item.flavorIcon,
                           }}
                         />
+                        <PaymentSourceBadge payment={item.payment} />
                         <span className="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-md font-medium">
                           {formatDate(item.prepDate)}
                         </span>

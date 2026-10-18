@@ -1,11 +1,13 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { useQueryClient } from '@tanstack/react-query';
 import { Modal } from '../../../components/ui/Modal';
 import { Input } from '../../../components/ui/Input';
 import { Select } from '../../../components/ui/Select';
 import { Button } from '../../../components/ui/Button';
+import { PaymentSourceSelector } from '../../transactions/components/PaymentSourceSelector';
 import { useUpdateExpense } from '../hooks/useExpenses';
 import { useMaterials } from '../../materials/hooks/useMaterials';
 import { getTodayLima } from '../../../lib/dates';
@@ -28,9 +30,18 @@ const expenseEditSchema = z.object({
 });
 
 export function ExpenseEditModal({ isOpen, onClose, expense = null }) {
+  const queryClient = useQueryClient();
   const updateMutation = useUpdateExpense();
   const { data: materials = [] } = useMaterials();
   const today = getTodayLima();
+
+  const [paymentState, setPaymentState] = useState({
+    cashAmount: 0,
+    yapeAmount: 0,
+    ownAmount: 0,
+    isValid: true,
+    errorMessage: null,
+  });
 
   const {
     register,
@@ -50,6 +61,7 @@ export function ExpenseEditModal({ isOpen, onClose, expense = null }) {
   });
 
   const watchedDesc = watch('description') || '';
+  const watchedAmount = watch('amount') || 0;
 
   useEffect(() => {
     if (isOpen && expense) {
@@ -59,11 +71,23 @@ export function ExpenseEditModal({ isOpen, onClose, expense = null }) {
         expenseDate: expense.expenseDate ? expense.expenseDate.slice(0, 10) : today,
         description: expense.description || '',
       });
+      setPaymentState({
+        cashAmount: expense.payment?.cashAmount || 0,
+        yapeAmount: expense.payment?.yapeAmount || 0,
+        ownAmount: expense.payment?.ownAmount || 0,
+        isValid: true,
+        errorMessage: null,
+      });
     }
   }, [isOpen, expense, reset, today]);
 
   const onSubmit = async (data) => {
     if (!expense) return;
+    if (!paymentState.isValid) {
+      toast.error(paymentState.errorMessage || 'Verifica el origen del dinero');
+      return;
+    }
+
     try {
       await updateMutation.mutateAsync({
         id: expense.id,
@@ -72,13 +96,29 @@ export function ExpenseEditModal({ isOpen, onClose, expense = null }) {
           amount: Number(data.amount),
           expenseDate: data.expenseDate,
           description: data.description ? data.description.trim() : null,
+          payment: {
+            cashAmount: paymentState.cashAmount,
+            yapeAmount: paymentState.yapeAmount,
+            ownAmount: paymentState.ownAmount,
+          },
         },
       });
       onClose();
     } catch (error) {
-      const handled = setFormErrorsFromApi(error, setError);
-      if (!handled) {
-        toast.error(getErrorMessage(error));
+      queryClient.invalidateQueries({ queryKey: ['stats'] });
+      const code = error.response?.data?.error?.code;
+      const details = error.response?.data?.error?.details;
+
+      if (code === 'INSUFFICIENT_BALANCE') {
+        const acc = details?.account === 'cash' ? 'Efectivo' : 'Yape';
+        toast.error(`Saldo insuficiente en ${acc} (disponible S/ ${Number(details?.available || 0).toFixed(2)})`);
+      } else if (code === 'PAYMENT_SUM_MISMATCH') {
+        toast.error('La suma de los orígenes de pago debe ser exactamente igual al monto del gasto');
+      } else {
+        const handled = setFormErrorsFromApi(error, setError);
+        if (!handled) {
+          toast.error(getErrorMessage(error));
+        }
       }
     }
   };
@@ -129,6 +169,18 @@ export function ExpenseEditModal({ isOpen, onClose, expense = null }) {
           {...register('amount')}
         />
 
+        {/* Selector de origen de pago */}
+        {expense && (
+          <PaymentSourceSelector
+            amount={watchedAmount}
+            value={paymentState}
+            onChange={setPaymentState}
+            existingPayment={expense.payment}
+            isEdit={true}
+            error={paymentState.errorMessage}
+          />
+        )}
+
         {/* Descripción */}
         <div className="space-y-1">
           <div className="flex justify-between items-center">
@@ -171,7 +223,12 @@ export function ExpenseEditModal({ isOpen, onClose, expense = null }) {
           >
             Cancelar
           </Button>
-          <Button type="submit" variant="primary" loading={updateMutation.isPending}>
+          <Button
+            type="submit"
+            variant="primary"
+            loading={updateMutation.isPending}
+            disabled={!paymentState.isValid || updateMutation.isPending}
+          >
             Guardar cambios
           </Button>
         </div>

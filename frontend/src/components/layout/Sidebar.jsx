@@ -5,6 +5,7 @@ import {
   ShoppingBag,
   FlaskConical,
   Receipt,
+  Wallet,
   Sparkles,
   KeyRound,
   LogOut,
@@ -54,6 +55,7 @@ export function Sidebar({ isOpen, onClose }) {
   const navItems = [
     { label: 'Inicio', path: '/', icon: Home },
     { label: 'Venta del día', path: '/venta', icon: ShoppingBag },
+    { label: 'Transacciones', path: '/transacciones', icon: Wallet },
     { label: 'Preparaciones', path: '/preparaciones', icon: FlaskConical },
     { label: 'Gastos', path: '/gastos', icon: Receipt },
     { label: 'Sabores', path: '/sabores', icon: Sparkles },

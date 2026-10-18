@@ -8,6 +8,7 @@ import { Spinner } from '../components/ui/Spinner';
 const LoginPage = lazy(() => import('../pages/LoginPage'));
 const HomePage = lazy(() => import('../pages/HomePage'));
 const SalePage = lazy(() => import('../pages/SalePage'));
+const TransactionsPage = lazy(() => import('../pages/TransactionsPage'));
 const FlavorsPage = lazy(() => import('../features/flavors/pages/FlavorsPage'));
 const ExpensesPage = lazy(() => import('../features/expenses/pages/ExpensesPage'));
 const PreparationsPage = lazy(() =>
@@ -45,6 +46,10 @@ export const router = createBrowserRouter([
       {
         path: 'venta',
         element: <Suspense fallback={pageFallback}><SalePage /></Suspense>,
+      },
+      {
+        path: 'transacciones',
+        element: <Suspense fallback={pageFallback}><TransactionsPage /></Suspense>,
       },
       {
         path: 'sabores',

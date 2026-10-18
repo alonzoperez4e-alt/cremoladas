@@ -24,6 +24,11 @@ const toPreparationDto = (row) => {
     description: row.description || null,
     createdBy: row.created_by ? Number(row.created_by) : null,
     createdAt: row.created_at,
+    payment: {
+      cashAmount: Number(row.paid_cash || 0),
+      yapeAmount: Number(row.paid_yape || 0),
+      ownAmount: Number(row.paid_own || 0),
+    },
   };
 };
 
@@ -66,6 +71,7 @@ export const preparationsRepository = {
 
     const itemsSql = `
       SELECT p.id, p.flavor_id, p.prep_date, p.investment_amount, p.description, p.created_by, p.created_at,
+             p.paid_cash, p.paid_yape, p.paid_own,
              f.name AS flavor_name, f.color AS flavor_color, f.icon AS flavor_icon
       FROM preparations p
       JOIN flavors f ON f.id = p.flavor_id
@@ -84,55 +90,63 @@ export const preparationsRepository = {
     };
   },
 
-  async findById(id) {
+  async findById(id, client = null) {
     const sql = `
       SELECT p.id, p.flavor_id, p.prep_date, p.investment_amount, p.description, p.created_by, p.created_at,
+             p.paid_cash, p.paid_yape, p.paid_own,
              f.name AS flavor_name, f.color AS flavor_color, f.icon AS flavor_icon
       FROM preparations p
       JOIN flavors f ON f.id = p.flavor_id
       WHERE p.id = $1
       LIMIT 1;
     `;
-    const res = await query(sql, [id]);
+    const res = client ? await client.query(sql, [id]) : await query(sql, [id]);
     return toPreparationDto(res.rows[0]);
   },
 
-  async create({ flavorId, prepDate, investmentAmount, description, createdBy }) {
+  async create({ flavorId, prepDate, investmentAmount, description, createdBy, paidCash = 0, paidYape = 0, paidOwn = 0 }, client = null) {
     const sql = `
       WITH inserted AS (
-        INSERT INTO preparations (flavor_id, prep_date, investment_amount, description, created_by, created_at)
-        VALUES ($1, $2, $3, $4, $5, NOW())
-        RETURNING id, flavor_id, prep_date, investment_amount, description, created_by, created_at
+        INSERT INTO preparations (flavor_id, prep_date, investment_amount, description, created_by, paid_cash, paid_yape, paid_own, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+        RETURNING id, flavor_id, prep_date, investment_amount, description, created_by, paid_cash, paid_yape, paid_own, created_at
       )
-      SELECT ins.id, ins.flavor_id, ins.prep_date, ins.investment_amount, ins.description, ins.created_by, ins.created_at,
-             f.name AS flavor_name, f.color AS flavor_color, f.icon AS flavor_icon
+      SELECT ins.id, ins.flavor_id, ins.prep_date, ins.investment_amount, ins.description, ins.created_by,
+             ins.paid_cash, ins.paid_yape, ins.paid_own,
+             f.name AS flavor_name, f.color AS flavor_color, f.icon AS flavor_icon, ins.created_at
       FROM inserted ins
       JOIN flavors f ON f.id = ins.flavor_id;
     `;
-    const res = await query(sql, [flavorId, prepDate, investmentAmount, description, createdBy]);
+    const res = client
+      ? await client.query(sql, [flavorId, prepDate, investmentAmount, description, createdBy, paidCash, paidYape, paidOwn])
+      : await query(sql, [flavorId, prepDate, investmentAmount, description, createdBy, paidCash, paidYape, paidOwn]);
     return toPreparationDto(res.rows[0]);
   },
 
-  async update(id, { flavorId, prepDate, investmentAmount, description }) {
+  async update(id, { flavorId, prepDate, investmentAmount, description, paidCash = 0, paidYape = 0, paidOwn = 0 }, client = null) {
     const sql = `
       WITH updated AS (
         UPDATE preparations
-        SET flavor_id = $1, prep_date = $2, investment_amount = $3, description = $4
-        WHERE id = $5
-        RETURNING id, flavor_id, prep_date, investment_amount, description, created_by, created_at
+        SET flavor_id = $1, prep_date = $2, investment_amount = $3, description = $4,
+            paid_cash = $5, paid_yape = $6, paid_own = $7
+        WHERE id = $8
+        RETURNING id, flavor_id, prep_date, investment_amount, description, created_by, paid_cash, paid_yape, paid_own, created_at
       )
-      SELECT upd.id, upd.flavor_id, upd.prep_date, upd.investment_amount, upd.description, upd.created_by, upd.created_at,
-             f.name AS flavor_name, f.color AS flavor_color, f.icon AS flavor_icon
+      SELECT upd.id, upd.flavor_id, upd.prep_date, upd.investment_amount, upd.description, upd.created_by,
+             upd.paid_cash, upd.paid_yape, upd.paid_own,
+             f.name AS flavor_name, f.color AS flavor_color, f.icon AS flavor_icon, upd.created_at
       FROM updated upd
       JOIN flavors f ON f.id = upd.flavor_id;
     `;
-    const res = await query(sql, [flavorId, prepDate, investmentAmount, description, id]);
+    const res = client
+      ? await client.query(sql, [flavorId, prepDate, investmentAmount, description, paidCash, paidYape, paidOwn, id])
+      : await query(sql, [flavorId, prepDate, investmentAmount, description, paidCash, paidYape, paidOwn, id]);
     return toPreparationDto(res.rows[0]);
   },
 
-  async delete(id) {
+  async delete(id, client = null) {
     const sql = 'DELETE FROM preparations WHERE id = $1 RETURNING id;';
-    const res = await query(sql, [id]);
+    const res = client ? await client.query(sql, [id]) : await query(sql, [id]);
     return res.rowCount > 0;
   },
 };

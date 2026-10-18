@@ -1,5 +1,8 @@
 import { z } from 'zod';
 import { isValidDateString } from '../../utils/date.js';
+import { paymentSchema } from '../preparations/preparations.schemas.js';
+
+export { paymentSchema };
 
 export const expenseBodySchema = z.object({
   materialId: z.coerce
@@ -24,4 +27,5 @@ export const expenseBodySchema = z.object({
     .max(255, 'La descripción no puede superar los 255 caracteres')
     .optional()
     .nullable(),
+  payment: paymentSchema,
 });

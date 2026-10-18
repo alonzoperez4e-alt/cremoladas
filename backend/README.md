@@ -23,8 +23,15 @@ La migración se encuentra en `db/migrations/002_fixed_cup_price.sql`. Introduce
 ### Migración 003: Método de pago en ventas (`003_payment_method.sql`)
 La migración documentaria se encuentra en `db/migrations/003_payment_method.sql`. Agrega la columna `payment_method VARCHAR(10) NOT NULL DEFAULT 'cash'` con CHECK (`'cash'` | `'yape'`) en la tabla `sales`. Permite registrar el método de pago ('cash' = Efectivo, 'yape' = Yape) en cada venta y calcular los ingresos desglosados por método.
 
+### Migración 004: Origen del dinero, retiros y saldos por cuenta (`004_transactions.sql`)
+La migración documentaria se encuentra en `db/migrations/004_transactions.sql`.
+- Agrega en `preparations` y `expenses` las columnas `paid_cash`, `paid_yape`, `paid_own` (con CHECK `paid_cash + paid_yape + paid_own = monto`).
+- Crea la tabla `withdrawals` con `(id, withdrawal_date, kind 'profit'|'reimbursement', cash_amount, yape_amount, description, created_by, created_at)` y CHECK `cash_amount + yape_amount > 0`.
+- Crea la vista `v_account_balances` que calcula ingresos, inversiones, retiros, saldos por cuenta (`cash_balance`, `yape_balance`) y aportes pendientes de devolución (`pending_reimbursement`).
+- Bloqueo transaccional preventivo mediante `SELECT pg_advisory_xact_lock(727001)` en toda mutación financiera con verificación obligatoria de invariantes.
+
 > [!NOTE]
-> Esta migración ya fue aplicada directamente en la base de datos de Neon y las ventas históricas quedaron como `'cash'`. El archivo SQL se mantiene como registro de versionado.
+> Esta migración ya fue aplicada directamente en la base de datos de Neon. El archivo SQL se mantiene como registro de versionado.
 
 ---
 
@@ -331,7 +338,7 @@ En la sección **Settings → Environment Variables** de Vercel, configure:
 ---
 
 ### 8. Módulo de Estadísticas (`/api/stats`)
-- `GET /api/stats/summary`: Resumen global de inversión, ingresos brutos, desglose por método de pago y ganancia neta.
+- `GET /api/stats/summary`: Resumen global de inversión (por material/preparación y por origen efectivo/yape/propio), ingresos brutos, retiros, saldos y ganancia disponible.
   ```bash
   curl -X GET http://localhost:4000/api/stats/summary \
     -H "Authorization: Bearer <TOKEN>"
@@ -350,7 +357,85 @@ En la sección **Settings → Environment Variables** de Vercel, configure:
       "revenueByPaymentMethod": {
         "cash": 800.00,
         "yape": 400.00
+      },
+      "investmentBySource": {
+        "cash": 250.00,
+        "yape": 100.00,
+        "own": 100.00
+      },
+      "withdrawals": {
+        "total": 200.00,
+        "profit": 150.00,
+        "reimbursement": 50.00
+      },
+      "balances": {
+        "cash": 450.00,
+        "yape": 200.00,
+        "total": 650.00
+      },
+      "availableProfit": 600.00,
+      "pendingReimbursement": 50.00
+    }
+  }
+  ```
+
+---
+
+### 9. Módulo de Retiros (`/api/withdrawals`)
+- `POST /api/withdrawals`: Registra un retiro de ganancias o devolución de aporte propio.
+  ```bash
+  curl -X POST http://localhost:4000/api/withdrawals \
+    -H "Authorization: Bearer <TOKEN>" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "kind": "profit",
+      "cashAmount": 100.00,
+      "yapeAmount": 50.00,
+      "description": "Retiro fin de semana",
+      "confirmCapitalUse": false
+    }'
+  ```
+- `DELETE /api/withdrawals/:id`: Borrado físico de un retiro para corrección de errores.
+  ```bash
+  curl -X DELETE http://localhost:4000/api/withdrawals/1 \
+    -H "Authorization: Bearer <TOKEN>"
+  ```
+
+---
+
+### 10. Módulo de Transacciones (`/api/transactions`)
+- `GET /api/transactions`: Lista paginada del historial de movimientos (ingresos, inversiones y retiros por cuenta afectada).
+  Filtros disponibles: `page`, `pageSize`, `from`, `to`, `type` (`income` | `investment` | `withdrawal`), `account` (`cash` | `yape` | `own`).
+  ```bash
+  curl -X GET "http://localhost:4000/api/transactions?page=1&pageSize=20&type=investment" \
+    -H "Authorization: Bearer <TOKEN>"
+  ```
+  **Respuesta**:
+  ```json
+  {
+    "data": [
+      {
+        "id": "income-1-cash",
+        "date": "2026-10-18",
+        "type": "income",
+        "account": "cash",
+        "amount": 120.00,
+        "effect": "in",
+        "title": "Ventas del día",
+        "description": null,
+        "refType": "sales_day",
+        "refId": 1,
+        "kind": null
       }
+    ],
+    "pagination": {
+      "page": 1,
+      "pageSize": 20,
+      "total": 1
+    },
+    "summary": {
+      "totalIn": 120.00,
+      "totalOut": 0.00
     }
   }
   ```
@@ -372,10 +457,15 @@ En la sección **Settings → Environment Variables** de Vercel, configure:
   ```
 - **Códigos de error de negocio**:
   - `400 VALIDATION_ERROR`: Fallo de validación en los campos enviados.
+  - `400 PAYMENT_SUM_MISMATCH`: La suma de efectivo + Yape + propio no es exactamente igual al total de la inversión.
   - `400 MATERIAL_NOT_FOUND`: Material inexistente o inactivo.
   - `400 FLAVOR_NOT_FOUND`: Sabor inexistente o inactivo.
   - `401 TOKEN_MISSING / TOKEN_INVALID / TOKEN_EXPIRED`: Fallo de autenticación JWT.
-  - `404 NOT_FOUND / EXPENSE_NOT_FOUND / PREPARATION_NOT_FOUND / DAY_NOT_STARTED`: Recurso no encontrado.
+  - `404 NOT_FOUND / EXPENSE_NOT_FOUND / PREPARATION_NOT_FOUND / WITHDRAWAL_NOT_FOUND / DAY_NOT_STARTED`: Recurso no encontrado.
+  - `409 INSUFFICIENT_BALANCE`: Saldo insuficiente en la cuenta elegida (`cash` o `yape`).
+  - `409 REIMBURSEMENT_EXCEEDS_PENDING`: El monto a devolver excede el aporte propio pendiente (`pending_reimbursement`).
+  - `409 EXCEEDS_AVAILABLE_PROFIT`: El retiro de ganancias excede la ganancia neta disponible (requiere `confirmCapitalUse: true`).
   - `409 FLAVOR_NAME_EXISTS / MATERIAL_NAME_EXISTS`: Nombre duplicado entre registros activos.
   - `409 FLAVOR_SOLD_OUT`: Intento de venta con sabor marcado como agotado.
   - `409 DAY_ALREADY_STARTED / DAY_ALREADY_CLOSED / DAY_CLOSED`: Restricciones de estado de jornada.
+

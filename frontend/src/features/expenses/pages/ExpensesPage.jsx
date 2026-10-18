@@ -26,6 +26,9 @@ import { ConfirmDialog } from '../../../components/ui/ConfirmDialog';
 import { formatCurrency, formatDate } from '../../../lib/format';
 import { getTodayLima } from '../../../lib/dates';
 import { getErrorMessage, setFormErrorsFromApi } from '../../../lib/errors';
+import { useQueryClient } from '@tanstack/react-query';
+import { PaymentSourceSelector } from '../../transactions/components/PaymentSourceSelector';
+import { PaymentSourceBadge } from '../../../components/ui/PaymentSourceBadge';
 import { toast } from 'sonner';
 
 const expenseCreateSchema = z.object({
@@ -74,8 +77,19 @@ export default function ExpensesPage() {
 
   // Modales
   const [isNewMaterialModalOpen, setIsNewMaterialModalOpen] = useState(false);
+  const queryClient = useQueryClient();
   const [editingExpense, setEditingExpense] = useState(null);
   const [expenseToDelete, setExpenseToDelete] = useState(null);
+
+  // Estado del selector de origen del dinero
+  const [paymentState, setPaymentState] = useState({
+    cashAmount: 0,
+    yapeAmount: 0,
+    ownAmount: 0,
+    isValid: false,
+    mode: '',
+    errorMessage: null,
+  });
 
   // Formulario de creación
   const {
@@ -97,6 +111,7 @@ export default function ExpensesPage() {
   });
 
   const watchedDesc = watch('description') || '';
+  const watchedAmount = watch('amount') || 0;
 
   // Manejador del cambio de material para capturar la opción "Agregar nuevo material"
   const handleMaterialSelectChange = (e) => {
@@ -118,12 +133,22 @@ export default function ExpensesPage() {
 
   // Envío del nuevo gasto
   const onSubmit = async (data) => {
+    if (!paymentState.isValid) {
+      toast.error(paymentState.errorMessage || 'Es obligatorio elegir el origen del dinero');
+      return;
+    }
+
     try {
       await createMutation.mutateAsync({
         materialId: Number(data.materialId),
         amount: Number(data.amount),
         expenseDate: data.expenseDate,
         description: data.description ? data.description.trim() : null,
+        payment: {
+          cashAmount: paymentState.cashAmount,
+          yapeAmount: paymentState.yapeAmount,
+          ownAmount: paymentState.ownAmount,
+        },
       });
 
       // Limpia el formulario manteniendo la fecha
@@ -135,9 +160,20 @@ export default function ExpensesPage() {
         description: '',
       });
     } catch (err) {
-      const handled = setFormErrorsFromApi(err, setError);
-      if (!handled) {
-        toast.error(getErrorMessage(err));
+      queryClient.invalidateQueries({ queryKey: ['stats'] });
+      const code = err.response?.data?.error?.code;
+      const details = err.response?.data?.error?.details;
+
+      if (code === 'INSUFFICIENT_BALANCE') {
+        const acc = details?.account === 'cash' ? 'Efectivo' : 'Yape';
+        toast.error(`Saldo insuficiente en ${acc} (disponible S/ ${Number(details?.available || 0).toFixed(2)})`);
+      } else if (code === 'PAYMENT_SUM_MISMATCH') {
+        toast.error('La suma de los orígenes de pago debe ser exactamente igual al monto del gasto');
+      } else {
+        const handled = setFormErrorsFromApi(err, setError);
+        if (!handled) {
+          toast.error(getErrorMessage(err));
+        }
       }
     }
   };
@@ -250,6 +286,14 @@ export default function ExpensesPage() {
               {...register('amount')}
             />
 
+            {/* Selector de origen del dinero */}
+            <PaymentSourceSelector
+              amount={watchedAmount}
+              value={paymentState}
+              onChange={setPaymentState}
+              error={paymentState.errorMessage}
+            />
+
             {/* Descripción */}
             <div className="space-y-1">
               <div className="flex justify-between items-center">
@@ -277,6 +321,7 @@ export default function ExpensesPage() {
               type="submit"
               variant="primary"
               loading={createMutation.isPending}
+              disabled={!paymentState.isValid || createMutation.isPending}
               className="w-full"
             >
               Guardar gasto
@@ -402,6 +447,7 @@ export default function ExpensesPage() {
                         <span className="font-bold text-slate-800 text-sm sm:text-base">
                           {item.materialName || 'Material general'}
                         </span>
+                        <PaymentSourceBadge payment={item.payment} />
                         <span className="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-md font-medium">
                           {formatDate(item.expenseDate)}
                         </span>

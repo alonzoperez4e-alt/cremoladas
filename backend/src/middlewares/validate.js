@@ -28,3 +28,31 @@ export const validateBody = (schema) => (req, res, next) => {
   req.body = result.data;
   next();
 };
+
+/**
+ * Middleware para validar los parámetros query de la petición contra un esquema de Zod
+ * @param {import('zod').ZodSchema} schema - Esquema de validación
+ * @returns {import('express').RequestHandler}
+ */
+export const validateQuery = (schema) => (req, res, next) => {
+  const result = schema.safeParse(req.query);
+
+  if (!result.success) {
+    const details = result.error.issues.map((issue) => ({
+      field: issue.path.join('.') || 'query',
+      message: issue.message,
+    }));
+
+    return next(
+      new AppError(
+        400,
+        ERROR_CODES.VALIDATION_ERROR,
+        'Error de validación en los parámetros de consulta',
+        details
+      )
+    );
+  }
+
+  req.query = result.data;
+  next();
+};

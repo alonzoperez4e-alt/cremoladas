@@ -106,7 +106,11 @@ describe('8. Módulo de Materiales y Gastos (Materials & Expenses)', () => {
 
     await assert.rejects(
       async () => {
-        await expensesService.create({ materialId: 999, amount: 50.0 }, 1);
+        await expensesService.create({
+          materialId: 999,
+          amount: 50.0,
+          payment: { cashAmount: 50.0, yapeAmount: 0, ownAmount: 0 },
+        }, 1);
       },
       (err) => {
         assert.strictEqual(err.statusCode, 400);
@@ -138,7 +142,11 @@ describe('9. Módulo de Preparaciones (Preparations)', () => {
 
     await assert.rejects(
       async () => {
-        await preparationsService.create({ flavorId: 888, investmentAmount: 30.0 }, 1);
+        await preparationsService.create({
+          flavorId: 888,
+          investmentAmount: 30.0,
+          payment: { cashAmount: 30.0, yapeAmount: 0, ownAmount: 0 },
+        }, 1);
       },
       (err) => {
         assert.strictEqual(err.statusCode, 400);
@@ -149,6 +157,35 @@ describe('9. Módulo de Preparaciones (Preparations)', () => {
   });
 
   it('un sabor agotado SÍ puede recibir preparaciones', async () => {
+    poolModule.setTransactionRunnerForTesting(async (cb) => {
+      const mockClient = {
+        query: async (sql) => {
+          if (sql && sql.includes('v_account_balances')) {
+            return {
+              rows: [
+                {
+                  cash_revenue: 100,
+                  yape_revenue: 100,
+                  cash_invested: 0,
+                  yape_invested: 0,
+                  own_invested: 0,
+                  cash_withdrawn: 0,
+                  yape_withdrawn: 0,
+                  profit_withdrawn: 0,
+                  reimbursed: 0,
+                  cash_balance: 100,
+                  yape_balance: 100,
+                  pending_reimbursement: 0,
+                },
+              ],
+            };
+          }
+          return { rows: [] };
+        },
+      };
+      return cb(mockClient);
+    });
+
     flavorsRepository.findById = async (id) => ({
       id,
       name: 'Lúcuma',
@@ -163,7 +200,11 @@ describe('9. Módulo de Preparaciones (Preparations)', () => {
       prepDate: data.prepDate,
     });
 
-    const res = await preparationsService.create({ flavorId: 5, investmentAmount: 45.0 }, 1);
+    const res = await preparationsService.create({
+      flavorId: 5,
+      investmentAmount: 45.0,
+      payment: { cashAmount: 45.0, yapeAmount: 0, ownAmount: 0 },
+    }, 1);
     assert.strictEqual(res.flavorName, 'Lúcuma');
     assert.strictEqual(res.investmentAmount, 45.0);
   });
