@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Sparkles, ArrowRight } from 'lucide-react';
 import { useFlavors, useToggleSoldOut } from '../../flavors/hooks/useFlavors';
 import { FlavorBadge } from '../../../components/ui/FlavorBadge';
@@ -10,6 +10,7 @@ import { getErrorMessage } from '../../../lib/errors';
 import { toast } from 'sonner';
 
 export function FlavorAvailabilityList() {
+  const navigate = useNavigate();
   const { data: flavors = [], isLoading, isError, error, refetch } = useFlavors();
   const toggleMutation = useToggleSoldOut();
   const [loadingFlavorId, setLoadingFlavorId] = useState(null);
@@ -44,7 +45,7 @@ export function FlavorAvailabilityList() {
         title="No hay sabores registrados"
         description="Añade sabores en el catálogo para controlar su disponibilidad y venderlos."
         actionLabel="Ir a Sabores"
-        onAction={() => {}}
+        onAction={() => navigate('/sabores')}
       />
     );
   }

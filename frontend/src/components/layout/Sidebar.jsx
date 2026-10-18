@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   Home,
@@ -21,10 +21,14 @@ export function Sidebar({ isOpen, onClose }) {
   const location = useLocation();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
-  // Cierra el sidebar al navegar a otra ruta
+  // Cierra el sidebar únicamente cuando cambia la ruta de navegación
+  const prevPathRef = useRef(location.pathname);
   useEffect(() => {
-    if (isOpen) {
-      onClose();
+    if (prevPathRef.current !== location.pathname) {
+      prevPathRef.current = location.pathname;
+      if (isOpen) {
+        onClose();
+      }
     }
   }, [location.pathname, isOpen, onClose]);
 
@@ -80,7 +84,7 @@ export function Sidebar({ isOpen, onClose }) {
         role="dialog"
         aria-modal="true"
         aria-label="Menú principal de navegación"
-        className={`fixed top-0 bottom-0 left-0 z-50 w-72 sm:w-80 bg-white shadow-2xl flex flex-col transition-transform duration-300 ease-in-out ${
+        className={`fixed top-0 bottom-0 left-0 z-50 h-full w-72 sm:w-80 bg-white shadow-2xl flex flex-col transition-transform duration-300 ease-in-out ${
           isOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
@@ -126,6 +130,7 @@ export function Sidebar({ isOpen, onClose }) {
               <NavLink
                 key={item.path}
                 to={item.path}
+                onClick={onClose}
                 className={({ isActive }) =>
                   `flex items-center gap-3 px-3.5 py-3 rounded-xl text-sm font-semibold transition-all select-none min-h-[44px] ${
                     isActive
