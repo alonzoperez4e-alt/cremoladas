@@ -1,5 +1,13 @@
 import { Router } from 'express';
 import authRoutes from '../modules/auth/auth.routes.js';
+import flavorsRoutes from '../modules/flavors/flavors.routes.js';
+import materialsRoutes from '../modules/materials/materials.routes.js';
+import expensesRoutes from '../modules/expenses/expenses.routes.js';
+import preparationsRoutes from '../modules/preparations/preparations.routes.js';
+import salesDaysRoutes from '../modules/sales-days/sales-days.routes.js';
+import salesRoutes from '../modules/sales/sales.routes.js';
+import statsRoutes from '../modules/stats/stats.routes.js';
+import { requireAuth } from '../middlewares/auth.js';
 import { checkDbHealth } from '../db/pool.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 
@@ -34,12 +42,13 @@ router.get(
 // Módulo de Autenticación
 router.use('/auth', authRoutes);
 
-// =============================================================================
-// FUTUROS MÓDULOS (listos para registrar sus rutas y aplicar requireAuth):
-// router.use('/sabores', requireAuth, saboresRoutes);
-// router.use('/gastos', requireAuth, gastosRoutes);
-// router.use('/preparaciones', requireAuth, preparacionesRoutes);
-// router.use('/ventas', requireAuth, ventasRoutes);
-// =============================================================================
+// Módulos protegidos del negocio (requieren token Bearer válido)
+router.use('/flavors', requireAuth, flavorsRoutes);
+router.use('/materials', requireAuth, materialsRoutes);
+router.use('/expenses', requireAuth, expensesRoutes);
+router.use('/preparations', requireAuth, preparationsRoutes);
+router.use('/sales-days', requireAuth, salesDaysRoutes);
+router.use('/sales', requireAuth, salesRoutes);
+router.use('/stats', requireAuth, statsRoutes);
 
 export default router;

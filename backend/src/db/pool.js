@@ -33,6 +33,12 @@ export const query = async (text, params = []) => {
   return pool.query(text, params);
 };
 
+let customTransactionRunner = null;
+
+export const setTransactionRunnerForTesting = (runner) => {
+  customTransactionRunner = runner;
+};
+
 /**
  * Ejecuta un conjunto de operaciones dentro de una transacción segura de PostgreSQL
  * Asegura BEGIN, COMMIT y ROLLBACK ante cualquier error, liberando siempre el cliente.
@@ -40,6 +46,9 @@ export const query = async (text, params = []) => {
  * @returns {Promise<*>} El resultado retornado por el callback
  */
 export const withTransaction = async (callback) => {
+  if (customTransactionRunner) {
+    return customTransactionRunner(callback);
+  }
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
